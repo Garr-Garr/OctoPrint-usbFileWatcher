@@ -1,0 +1,139 @@
+<div id="usbfilewatcher_settings">
+
+<center><h3>USB File Watcher Settings</h3></center>
+
+<hr/>
+
+<div class="row-fluid">
+    <div class="span12">
+        <h4>USB Device Monitoring</h4>
+        <p>This plugin automatically detects USB devices and copies GCode files to your OctoPrint uploads folder.</p>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('Enable Automatic Monitoring') }}</label>
+            <div class="controls">
+                <input type="checkbox" data-bind="checked: settings.plugins.usbfilewatcher.autoMonitor">
+                <span class="help-inline">{{ _('Automatically monitor for USB devices and copy files when detected') }}</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('Monitor Interval (seconds)') }}</label>
+            <div class="controls">
+                <input type="number" class="input-mini" data-bind="value: settings.plugins.usbfilewatcher.monitorInterval" min="1" max="60">
+                <span class="help-inline">{{ _('How often to check for new USB devices (1-60 seconds)') }}</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="controls">
+                <button class="btn btn-primary" data-bind="click: function() { $root.toggleMonitoring() }">
+                    <span data-bind="text: $root.monitoringStatus"></span>
+                </button>
+                <button class="btn btn-success" data-bind="click: function() { $root.scanUsb() }">
+                    {{ _('Scan USB Devices Now') }}
+                </button>
+                <button class="btn btn-info" data-bind="click: function() { $root.getUsbDevices() }">
+                    {{ _('Show Detected USB Devices') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<hr/>
+
+<div class="row-fluid">
+    <div class="span12">
+        <h4>File Settings</h4>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('Copy Destination Folder') }}</label>
+            <div class="controls">
+                <input type="text" class="input-xxlarge" data-bind="value: settings.plugins.usbfilewatcher.copyFolder">
+                <span class="help-inline">{{ _('Where to copy files from USB devices') }}</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('File Types to Copy') }}</label>
+            <div class="controls">
+                <input type="text" class="input-xxlarge" data-bind="value: settings.plugins.usbfilewatcher.copyFileTypes">
+                <span class="help-inline">{{ _('Comma-separated list of file extensions (e.g., .gcode,.gco,.g,.stl)') }}</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('Action After Copy') }}</label>
+            <div class="controls">
+                <select data-bind="value: settings.plugins.usbfilewatcher.fileAction">
+                    <option value="rename">{{ _('Rename original file (add COPIED prefix)') }}</option>
+                    <option value="leave">{{ _('Leave original file unchanged') }}</option>
+                </select>
+                <span class="help-inline">{{ _('What to do with the original file after copying') }}</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('Debug Logging') }}</label>
+            <div class="controls">
+                <input type="checkbox" data-bind="checked: settings.plugins.usbfilewatcher.debug_logging">
+                <span class="help-inline">{{ _('Enable detailed debug logging to separate USB File Watcher log file (~/.octoprint/logs/usbfilewatcher-usb.log)') }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<hr/>
+
+<div class="row-fluid">
+    <div class="span12">
+        <h4>Watch Folders Setup</h4>
+        <div class="alert alert-info">
+            <strong>Quick Setup:</strong> This plugin monitors specific folders for USB devices.
+            For best results, mount your USB devices to consistent locations like <code>/media/usb</code>.
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">{{ _('Watch Folders') }}</label>
+            <div class="controls">
+                <textarea rows="4" class="input-xxlarge" data-bind="value: settings.plugins.usbfilewatcher.watchFolders" placeholder="/media/usb&#10;/media/usb1&#10;/mnt/usb"></textarea>
+                <span class="help-inline">
+                    {{ _('One folder path per line. The plugin will monitor these locations for files.') }}<br/>
+                    <strong>Tip:</strong> Create consistent mount points with: <code>sudo mkdir -p /media/usb</code><br/>
+                    Then mount USB devices with: <code>sudo mount /dev/sda1 /media/usb</code>
+                </span>
+            </div>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>USB Device Detection:</strong> If you have unmounted USB devices, check the OctoPrint logs.
+            The plugin will detect them and provide mounting instructions.
+        </div>
+    </div>
+</div>
+
+<hr/>
+
+<div class="row-fluid">
+    <div class="span12">
+        <h4>Status</h4>
+        <div id="usbfilewatcher_status">
+            <div class="control-group">
+                <label class="control-label">{{ _('Last Operation Result') }}</label>
+                <div class="controls">
+                    <textarea id="usbfilewatcher_result" rows="6" class="input-xxlarge" readonly data-bind="text: $root.lastResult" placeholder="No operations performed yet"></textarea>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">{{ _('Detected USB Devices') }}</label>
+                <div class="controls">
+                    <textarea id="usbfilewatcher_devices" rows="4" class="input-xxlarge" readonly data-bind="text: $root.detectedDevices" placeholder="Click 'Show Detected USB Devices' to see current devices"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>

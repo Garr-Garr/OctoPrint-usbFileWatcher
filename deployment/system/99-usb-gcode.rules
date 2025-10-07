@@ -1,0 +1,10 @@
+# USB GCode Transfer udev rules (enterprise systemd approach)
+# Based on original usbstick.rules design
+# Place in /etc/udev/rules.d/99-usb-gcode.rules
+
+# Auto-mount USB storage devices using systemd service
+ACTION=="add", KERNEL=="sd[a-z][0-9]", TAG+="systemd", ENV{SYSTEMD_WANTS}="usbstick-handler@%k"
+
+# Alternative: Target specific USB port (uncomment and adjust KERNELS value)
+# Find your port with: udevadm info --name=/dev/sda --attribute-walk | grep KERNELS
+# ACTION=="add", KERNEL=="sd[a-z][0-9]", KERNELS=="1-1.4", TAG+="systemd", ENV{SYSTEMD_WANTS}="usbstick-handler@%k"

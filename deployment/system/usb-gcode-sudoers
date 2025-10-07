@@ -1,0 +1,4 @@
+# sudoers configuration file - NOT a shell script
+# This file contains sudo permissions for USB GCode transfer system
+# pi user can run mount/unmount scripts and pmount/pumount without password
+pi ALL=(ALL) NOPASSWD: /usr/local/bin/usb-gcode-mount.sh, /usr/local/bin/usb-gcode-unmount.sh, /usr/bin/pmount, /usr/bin/pumount
