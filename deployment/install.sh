@@ -74,6 +74,30 @@ install_system_files() {
     mkdir -p /etc/sudoers.d
     mkdir -p /etc/systemd/system
 
+    # Install required packages for filesystem support
+    log "Installing filesystem support packages..."
+    
+    # Update package list
+    apt-get update -qq || warn "Could not update package list"
+    
+    # Install pmount and filesystem support
+    local packages=(
+        "pmount"           # Safe mounting utility
+        "ntfs-3g"          # NTFS filesystem support
+        "exfat-fuse"       # exFAT filesystem support
+        "exfat-utils"      # exFAT utilities
+        "dosfstools"       # FAT32/FAT16 filesystem tools
+    )
+    
+    for package in "${packages[@]}"; do
+        if ! dpkg -l | grep -q "^ii  $package "; then
+            log "Installing $package..."
+            apt-get install -y "$package" || warn "Could not install $package"
+        else
+            log "$package is already installed"
+        fi
+    done
+
     # Copy and set permissions for scripts
     cp "$SCRIPT_DIR/system/usb-gcode-mount.sh" /usr/local/bin/
     cp "$SCRIPT_DIR/system/usb-gcode-unmount.sh" /usr/local/bin/
@@ -159,9 +183,32 @@ test_installation() {
         warn "Sudo configuration may not be working properly"
     fi
 
-    # Check if pmount is available
-    if ! command -v pmount >/dev/null 2>&1; then
-        warn "pmount not found - install with: apt-get install pmount"
+    # Check filesystem support packages
+    local required_packages=(
+        "pmount"
+        "ntfs-3g"
+        "exfat-fuse"
+        "exfat-utils"
+        "dosfstools"
+    )
+
+    for package in "${required_packages[@]}"; do
+        if ! command -v "$package" >/dev/null 2>&1 && ! dpkg -l | grep -q "^ii  $package "; then
+            warn "$package not found - some filesystem types may not be supported"
+        fi
+    done
+
+    # Test filesystem support
+    if command -v mount.exfat >/dev/null 2>&1; then
+        log "exFAT support: Available"
+    else
+        warn "exFAT support: Not available - install exfat-fuse and exfat-utils"
+    fi
+
+    if command -v mount.ntfs >/dev/null 2>&1 || command -v mount.ntfs-3g >/dev/null 2>&1; then
+        log "NTFS support: Available"
+    else
+        warn "NTFS support: Not available - install ntfs-3g"
     fi
 
     log "Installation test passed"
@@ -198,9 +245,15 @@ show_post_install_info() {
     echo ""
     echo "Enterprise USB Auto-Mount System installed using pmount + systemd approach"
     echo ""
+    echo "Supported Filesystems:"
+    echo "  ✓ FAT32/FAT16 (native Linux support)"
+    echo "  ✓ NTFS (via ntfs-3g package)"
+    echo "  ✓ exFAT (via exfat-fuse and exfat-utils packages)"
+    echo "  ✓ ext2/ext3/ext4 (native Linux support)"
+    echo ""
     echo "Next steps:"
-    echo "1. Install pmount if not already available:"
-    echo "   apt-get install pmount"
+    echo "1. Verify filesystem packages are installed:"
+    echo "   dpkg -l | grep -E '(pmount|ntfs-3g|exfat-fuse|exfat-utils|dosfstools)'"
     echo ""
     echo "2. (Optional) Target specific USB port by editing:"
     echo "   /etc/udev/rules.d/99-usb-gcode.rules"
@@ -215,6 +268,12 @@ show_post_install_info() {
     echo "How it works:"
     echo "  - Insert USB → udev triggers systemd service → pmount to /media/usb* → OctoPrint API call"
     echo "  - Files copied → pumount when removed or after delay"
+    echo ""
+    echo "Troubleshooting filesystem issues:"
+    echo "  - exFAT not mounting: apt-get install exfat-fuse exfat-utils"
+    echo "  - NTFS not mounting: apt-get install ntfs-3g"
+    echo "  - Check mount errors: journalctl -f -u 'usbstick-handler@*'"
+    echo "  - Manual mount test: pmount /dev/sda1 /media/usb1"
     echo ""
     echo "Log files:"
     echo "  - USB operations: /var/log/usb-gcode.log"

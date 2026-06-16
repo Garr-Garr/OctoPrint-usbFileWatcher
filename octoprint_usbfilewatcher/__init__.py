@@ -45,7 +45,7 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 			self._usb_logger.setLevel(logging.DEBUG if self._settings.get_boolean(["debug_logging"]) else logging.INFO)
 			self._usb_logger.propagate = False
 
-			self._usb_logger.info("=== USB File Watcher Plugin Logger Started ===")
+			self._safe_log("info", "=== USB File Watcher Plugin Logger Started ===")
 		except Exception as e:
 			# Fallback to regular logger if dedicated logger setup fails
 			self._usb_logger = self._logger
@@ -75,6 +75,9 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 				"/media/usb4"
 			],
 			enabled=True,
+			autoMonitor=True,
+			monitorInterval=5,  # seconds between USB checks
+			copyFolder="~/.octoprint/uploads/USB",
 
 			# Enterprise Features
 			enterpriseMode=True,
@@ -83,11 +86,14 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 
 			# File Management
 			extensions=[".gcode", ".gco", ".g"],
+			copyFileTypes=[".gcode", ".gco", ".g"],  # alias for backwards compatibility
+			fileAction="rename",  # "rename" or "delete"
 			deleteAfterCopy=False,
 			overwriteExisting=False,
 
 			# Advanced Options
-			logLevel="INFO"
+			logLevel="INFO",
+			debug_logging=False
 		)
 
 	def on_after_startup(self):
@@ -95,16 +101,16 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		self._setup_usb_folder()
 
 		# Start USB monitoring thread
-		if self._settings.get(["autoMonitor"]):
+		if self._settings.get_boolean(["autoMonitor"]):
 			self.start_usb_monitoring()
 
 		# Trigger a file list refresh to make the USB folder visible immediately
 		try:
 			self._event_bus.fire(Events.UPDATED_FILES, dict(type="printables"))
 		except Exception as e:
-			self._usb_logger.debug(f"Could not trigger file list refresh: {e}")
+			self._safe_log("debug", f"Could not trigger file list refresh: {e}")
 
-		self._usb_logger.info("USB File Watcher plugin started successfully")
+		self._safe_log("info", "USB File Watcher plugin started successfully")
 
 	def _setup_usb_folder(self):
 		"""Setup USB folder only if it doesn't exist or path has changed"""
@@ -159,14 +165,14 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 			self._usb_monitor_thread = threading.Thread(target=self._monitor_usb_devices)
 			self._usb_monitor_thread.daemon = True
 			self._usb_monitor_thread.start()
-			self._usb_logger.info("USB monitoring started")
+			self._safe_log("info", "USB monitoring started")
 
 	def stop_usb_monitoring(self):
 		"""Stop monitoring for USB devices"""
 		self._stop_monitoring = True
 		if self._usb_monitor_thread and self._usb_monitor_thread.is_alive():
 			self._usb_monitor_thread.join(timeout=5)
-		self._usb_logger.info("USB monitoring stopped")
+		self._safe_log("info", "USB monitoring stopped")
 
 	def _monitor_usb_devices(self):
 		"""Monitor for USB devices and automatically copy files - Enterprise mode"""
@@ -175,12 +181,12 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		# Check platform once at the start
 		is_linux = sys.platform.startswith('linux')
 		if not is_linux:
-			self._usb_logger.info("Non-Linux system detected. Only monitoring configured watch folders.")
+			self._safe_log("info", "Non-Linux system detected. Only monitoring configured watch folders.")
 
-		self._usb_logger.info("Starting USB device monitoring loop (Enterprise Mode)")
+		self._safe_log("info", "Starting USB device monitoring loop (Enterprise Mode)")
 
 		# Monitor for auto-mount notification file if in enterprise mode
-		enterprise_mode = self._settings.get(["enterpriseMode"])
+		enterprise_mode = self._settings.get_boolean(["enterpriseMode"])
 		mount_notification_file = "/tmp/usb-gcode-mounted"
 
 		while not self._stop_monitoring:
@@ -197,14 +203,14 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 									full_path = os.path.join(base_path, item)
 									if os.path.ismount(full_path) or os.path.isdir(full_path):
 										current_devices.add(full_path)
-										self._usb_logger.debug(f"Found mount point: {full_path}")
+										self._safe_log("debug", f"Found mount point: {full_path}")
 							except (PermissionError, OSError) as e:
-								self._usb_logger.debug(f"Cannot access {base_path}: {e}")
+								self._safe_log("debug", f"Cannot access {base_path}: {e}")
 
 				# Check for new USB devices
 				new_devices = current_devices - last_devices
 				if new_devices:
-					self._usb_logger.info(f"New USB device(s) detected: {new_devices}")
+					self._safe_log("info", f"New USB device(s) detected: {new_devices}")
 					# Small delay to ensure the device is fully mounted
 					time.sleep(2)
 					self._scan_and_copy_files()
@@ -212,11 +218,11 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 				# Also log if devices were removed
 				removed_devices = last_devices - current_devices
 				if removed_devices:
-					self._usb_logger.info(f"USB device(s) removed: {removed_devices}")
+					self._safe_log("info", f"USB device(s) removed: {removed_devices}")
 
 				# Enterprise mode: Check for auto-mount notification
 				if enterprise_mode and os.path.exists(mount_notification_file):
-					self._usb_logger.info("Auto-mount notification detected, scanning for files...")
+					self._safe_log("info", "Auto-mount notification detected, scanning for files...")
 					self._scan_and_copy_files()
 					# Remove notification file after processing
 					try:
@@ -235,12 +241,12 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 				# Check for unmounted devices every 10th iteration in enterprise mode
 				check_interval = 10 if enterprise_mode else 5
 				if self._monitor_iteration % check_interval == 0:
-					self._check_unmounted_usb_devices()
+					self._check_for_new_usb_devices()
 
-				time.sleep(self._settings.get(["monitorInterval"]))
+				time.sleep(self._settings.get_int(["monitorInterval"]) or 5)
 
 			except Exception as e:
-				self._usb_logger.error(f"Error in USB monitoring: {e}")
+				self._safe_log("error", f"Error in USB monitoring: {e}")
 				time.sleep(5)  # Wait longer on error
 
 	def _get_usb_mount_points(self):
@@ -261,7 +267,19 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 										# Test if we can access the directory
 										os.listdir(full_path)
 										mount_points.append(full_path)
-										self._usb_logger.debug(f"Found mounted USB device: {full_path}")
+										self._safe_log("debug", f"Found mounted USB device: {full_path}")
+										
+										# Additional debugging for filesystem type
+										try:
+											import subprocess
+											result = subprocess.run(['stat', '-f', '-c', '%T', full_path], 
+																  capture_output=True, text=True, timeout=5)
+											if result.returncode == 0:
+												fs_type = result.stdout.strip()
+												self._safe_log("debug", f"Filesystem type for {full_path}: {fs_type}")
+										except Exception:
+											pass  # Don't fail if we can't detect filesystem type
+											
 									except (PermissionError, OSError):
 										pass  # Skip inaccessible directories
 						except (PermissionError, OSError):
@@ -277,30 +295,153 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 									device_path = os.path.join(user_path, device)
 									if os.path.isdir(device_path):
 										mount_points.append(device_path)
-										self._usb_logger.debug(f"Found systemd mounted USB device: {device_path}")
+										self._safe_log("debug", f"Found systemd mounted USB device: {device_path}")
 					except (PermissionError, OSError):
 						pass
 
 			else:
-				self._usb_logger.info("Non-Linux system: Skipping automatic USB detection")
+				self._safe_log("info", "Non-Linux system: Skipping automatic USB detection")
 		except Exception as e:
-			self._usb_logger.error(f"Error getting USB mount points: {e}")
+			self._safe_log("error", f"Error getting USB mount points: {e}")
 
 		# Always check configured watch folders (works on all platforms)
-		for folder in self._settings.get(["watchFolders"]):
+		for folder in self._settings.get(["watchFolders"]) or []:
 			if os.path.exists(folder) and folder not in mount_points:
 				mount_points.append(folder)
 
 		if not mount_points:
-			self._usb_logger.debug("No USB mount points found. Check if USB devices are mounted.")
+			self._safe_log("debug", "No USB mount points found. Check if USB devices are mounted.")
 		else:
-			self._usb_logger.info(f"Total mount points found: {len(mount_points)} - {mount_points}")
+			self._safe_log("info", f"Total mount points found: {len(mount_points)} - {mount_points}")
 
 		return mount_points
 
+	def _run_diagnostics(self):
+		"""Run comprehensive diagnostics for USB filesystem support"""
+		diagnostics = {
+			"timestamp": datetime.datetime.now().isoformat(),
+			"platform": sys.platform,
+			"packages": {},
+			"filesystem_support": {},
+			"usb_devices": {},
+			"mount_points": {},
+			"logs": {}
+		}
+		
+		try:
+			# Check required packages
+			import subprocess
+			packages_to_check = ["pmount", "exfat-fuse", "exfat-utils", "ntfs-3g", "dosfstools"]
+			
+			for package in packages_to_check:
+				try:
+					result = subprocess.run(['dpkg', '-l', package], 
+											capture_output=True, text=True, timeout=5)
+					diagnostics["packages"][package] = "installed" if result.returncode == 0 else "not_installed"
+				except Exception:
+					diagnostics["packages"][package] = "unknown"
+			
+			# Check filesystem support
+			fs_commands = {
+				"exfat": "mount.exfat",
+				"ntfs": "mount.ntfs-3g", 
+				"vfat": "mount.vfat"
+			}
+			
+			for fs_type, command in fs_commands.items():
+				try:
+					result = subprocess.run(['which', command], 
+											capture_output=True, text=True, timeout=5)
+					diagnostics["filesystem_support"][fs_type] = "available" if result.returncode == 0 else "not_available"
+				except Exception:
+					diagnostics["filesystem_support"][fs_type] = "unknown"
+			
+			# Check USB devices and their filesystems
+			try:
+				result = subprocess.run(['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT'], 
+										capture_output=True, text=True, timeout=10)
+				if result.returncode == 0:
+					import json
+					lsblk_data = json.loads(result.stdout)
+					
+					usb_devices = []
+					for device in lsblk_data.get('blockdevices', []):
+						if device.get('children'):
+							for child in device.get('children', []):
+								if child.get('fstype'):
+									usb_devices.append({
+										"device": f"/dev/{child.get('name')}",
+										"filesystem": child.get('fstype'),
+										"size": child.get('size'),
+										"mountpoint": child.get('mountpoints', [None])[0] if child.get('mountpoints') else None
+									})
+					
+					diagnostics["usb_devices"]["detected"] = usb_devices
+				else:
+					diagnostics["usb_devices"]["error"] = "Could not run lsblk"
+			except Exception as e:
+				diagnostics["usb_devices"]["error"] = str(e)
+			
+			# Check mount points
+			for mount_path in ["/media/usb1", "/media/usb2", "/media/usb3", "/media/usb4"]:
+				mount_info = {
+					"exists": os.path.exists(mount_path),
+					"is_mount": False,
+					"filesystem": None,
+					"device": None
+				}
+				
+				if os.path.exists(mount_path):
+					try:
+						mount_info["is_mount"] = os.path.ismount(mount_path)
+						if mount_info["is_mount"]:
+							# Get filesystem info
+							result = subprocess.run(['findmnt', '-n', '-o', 'SOURCE,FSTYPE', mount_path], 
+													capture_output=True, text=True, timeout=5)
+							if result.returncode == 0:
+								parts = result.stdout.strip().split()
+								if len(parts) >= 2:
+									mount_info["device"] = parts[0]
+									mount_info["filesystem"] = parts[1]
+					except Exception:
+						pass
+				
+				diagnostics["mount_points"][mount_path] = mount_info
+			
+			# Get recent log entries
+			try:
+				if hasattr(self, '_usb_logger') and self._usb_logger:
+					# Get recent log messages (this is a simplified approach)
+					diagnostics["logs"]["plugin_status"] = "logger_active"
+				else:
+					diagnostics["logs"]["plugin_status"] = "logger_inactive"
+			except Exception:
+				diagnostics["logs"]["plugin_status"] = "unknown"
+			
+			self._safe_log("info", f"Diagnostics completed: {len(diagnostics)} categories checked")
+			
+		except Exception as e:
+			diagnostics["error"] = str(e)
+			self._safe_log("error", f"Error running diagnostics: {e}")
+		
+		return diagnostics
+
+	def _check_for_new_usb_devices(self):
+		"""Check for new USB devices that might need mounting (enterprise mode)"""
+		if not self._settings.get_boolean(["enterpriseMode"]):
+			return
+
+		try:
+			# This is a placeholder for enterprise auto-mounting logic
+			# In a real deployment, this would check for unmounted USB devices
+			# and trigger the systemd auto-mount services
+			self._safe_log("debug", "Checking for new USB devices...")
+		except Exception as e:
+			self._safe_log("debug", f"Error checking for new USB devices: {e}")
+
 	def _check_and_mount_usb_devices(self):
 		"""Enterprise mode: Automatically mount detected USB devices"""
-		if not self._settings.get(["enterpriseMode"]):
+		if not self._settings.get_boolean(["enterpriseMode"]):
 			return
 
 		try:
@@ -348,11 +489,11 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 
 	def _auto_unmount_after_copy(self, mount_point="/media/gcode-transfer"):
 		"""Auto-unmount the USB device after copying files"""
-		if not self._settings.get(["autoUnmount"]):
+		if not self._settings.get_boolean(["autoUnmount"]):
 			return
 
 		def delayed_unmount():
-			delay = self._settings.get(["unmountDelay"])
+			delay = self._settings.get_int(["unmountDelay"]) or 30
 			self._usb_logger.info(f"Auto-unmounting {mount_point} in {delay} seconds...")
 			time.sleep(delay)
 
@@ -385,23 +526,29 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 	def _scan_and_copy_files(self):
 		"""Scan USB devices and copy files with auto-unmount support"""
 		try:
-			result = self._copy_files_from_usb()
-			if "Copied" in result.get_json().get("result", ""):
-				self._event_bus.fire(Events.UPDATED_FILES, dict(type="printables"))
+			# Call the file copying logic directly without using Flask context
+			result_message = self._copy_files_from_usb_direct()
+			
+			if "Copied" in result_message:
+				# Safely fire event with proper context handling
+				try:
+					self._event_bus.fire(Events.UPDATED_FILES, dict(type="printables"))
+				except Exception as e:
+					self._safe_log("debug", f"Could not fire UPDATED_FILES event: {e}")
 
 				# Auto-unmount if enabled and in enterprise mode
-				if (self._settings.get(["autoUnmount"]) and
-					self._settings.get(["enterpriseMode"])):
+				if (self._settings.get_boolean(["autoUnmount"]) and
+					self._settings.get_boolean(["enterpriseMode"])):
 					self._schedule_auto_unmount()
 
 		except Exception as e:
-			self._usb_logger.error(f"Error in auto file copy: {e}")
+			self._safe_log("error", f"Error in auto file copy: {e}")
 
 	def _schedule_auto_unmount(self):
 		"""Schedule auto-unmount after file copying using pumount (enterprise approach)"""
 		def delayed_unmount():
-			delay = self._settings.get(["unmountDelay"])
-			self._usb_logger.info(f"Scheduling auto-unmount in {delay} seconds...")
+			delay = self._settings.get_int(["unmountDelay"]) or 30
+			self._safe_log("info", f"Scheduling auto-unmount in {delay} seconds...")
 			time.sleep(delay)
 
 			# Find currently mounted USB devices in /media/usb*
@@ -419,19 +566,19 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 						result = subprocess.run(['sudo', 'pumount', f'/dev/{device_name}'],
 											  capture_output=True, text=True, timeout=30)
 						if result.returncode == 0:
-							self._usb_logger.info(f"Auto-unmount completed successfully for {mount_point}")
+							self._safe_log("info", f"Auto-unmount completed successfully for {mount_point}")
 						else:
 							# Fallback to our unmount script
 							result = subprocess.run(['sudo', '/usr/local/bin/usb-gcode-unmount.sh'],
 												  capture_output=True, text=True, timeout=30)
 							if result.returncode == 0:
-								self._usb_logger.info("Auto-unmount completed using fallback script")
+								self._safe_log("info", "Auto-unmount completed using fallback script")
 							else:
-								self._usb_logger.warning(f"Auto-unmount failed: {result.stderr}")
+								self._safe_log("warning", f"Auto-unmount failed: {result.stderr}")
 					except Exception as e:
-						self._usb_logger.error(f"Error during auto-unmount: {e}")
+						self._safe_log("error", f"Error during auto-unmount: {e}")
 			else:
-				self._usb_logger.debug("No mount points found, skipping auto-unmount")
+				self._safe_log("debug", "No mount points found, skipping auto-unmount")
 
 		# Run unmount in background thread
 		unmount_thread = threading.Thread(target=delayed_unmount)
@@ -439,20 +586,37 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		unmount_thread.start()
 
 	def on_api_get(self, request):
-		self._usb_logger.info("usbfilewatcher on_api_get triggered.  Request: "+str(request))
+		self._safe_log("info", "usbfilewatcher on_api_get triggered.  Request: "+str(request))
 		return self._copy_files_from_usb()
 
 	def _copy_files_from_usb(self):
-		"""Copy files from USB devices to the copy folder"""
+		"""Copy files from USB devices to the copy folder - Flask API version"""
+		result_message = self._copy_files_from_usb_direct()
+		return flask.jsonify(result="Finished without error.  Results: "+result_message)
+
+	def _copy_files_from_usb_direct(self):
+		"""Copy files from USB devices to the copy folder - Direct version for background threads"""
 		resultMessage = ""
 		newFiles = False
 		dest = self._settings.get(["copyFolder"])
+
+		# Expand user path if it starts with ~
+		if dest and dest.startswith('~'):
+			dest = os.path.expanduser(dest)
+
+		# Ensure destination directory exists
+		if dest:
+			try:
+				os.makedirs(dest, exist_ok=True)
+			except Exception as e:
+				self._safe_log("error", f"Could not create destination directory {dest}: {e}")
+				return f"Could not create destination directory {dest}: {e}"
 
 		# Get USB mount points automatically
 		usb_mount_points = self._get_usb_mount_points()
 
 		# Also include configured watch folders
-		all_folders_to_check = list(set(self._settings.get(["watchFolders"]) + usb_mount_points))
+		all_folders_to_check = list(set((self._settings.get(["watchFolders"]) or []) + usb_mount_points))
 
 		for folderToCheck in all_folders_to_check:
 			src = folderToCheck
@@ -461,10 +625,26 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 				continue
 
 			try:
-				# Conservative file scanning - limit depth and file count for performance
+				# More targeted file scanning - only look for gcode files
 				file_paths = []
-				max_files = 1000  # Limit total files to scan
-				max_depth = 3     # Limit recursion depth
+				max_files = 100  # Reduced limit since we're being more selective
+				max_depth = 3    # Limit recursion depth
+				valid_extensions = self._settings.get(["extensions"]) or [".gcode", ".gco", ".g"]
+				
+				# Debug: List what's actually in the root directory
+				try:
+					root_contents = os.listdir(src)
+					# Filter to show only relevant files and directories
+					relevant_items = []
+					for item in root_contents:
+						if not item.startswith('.') and not item.upper() in ['SYSTEM VOLUME INFORMATION', '$RECYCLE.BIN']:
+							relevant_items.append(item)
+					
+					self._safe_log("info", f"Relevant items in {src}: {relevant_items[:10]}...")
+					if len(relevant_items) > 10:
+						self._safe_log("info", f"Total relevant items: {len(relevant_items)} (showing first 10)")
+				except Exception as e:
+					self._safe_log("warning", f"Could not list root contents of {src}: {e}")
 
 				for root, dirs, files in os.walk(src):
 					# Calculate current depth
@@ -474,20 +654,40 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 						continue
 
 					# Skip hidden directories and common system directories
-					dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['System Volume Information', '$RECYCLE.BIN', 'lost+found']]
-
+					dirs[:] = [d for d in dirs if not d.startswith('.') and d.upper() not in ['SYSTEM VOLUME INFORMATION', '$RECYCLE.BIN', 'LOST+FOUND', 'RECYCLER']]
+					
+					# Only look at files that could be gcode files
 					for file in files:
+						# Quick extension check first (most efficient filter)
+						_, file_ext = os.path.splitext(file)
+						if file_ext.lower() not in valid_extensions:
+							continue
+							
+						# Skip hidden files, system files, and common junk files
+						if (file.startswith('.') or 
+							file.startswith('~') or
+							file.startswith('COPIED') or
+							file.upper() in ['THUMBS.DB', 'DESKTOP.INI', '.DS_STORE'] or
+							file.endswith('.tmp') or
+							file.endswith('.log')):
+							continue
+							
 						if len(file_paths) >= max_files:
-							self._usb_logger.warning(f"File limit reached ({max_files}) in {src}, stopping scan")
+							self._safe_log("warning", f"File limit reached ({max_files}) gcode files in {src}, stopping scan")
 							break
 						file_paths.append(os.path.join(root, file))
 
 					if len(file_paths) >= max_files:
 						break
 
-				self._usb_logger.info(f"Found {len(file_paths)} files in {src} (max depth: {max_depth})")
+				self._safe_log("info", f"Found {len(file_paths)} potential gcode files in {src} (max depth: {max_depth})")
+				
+				# Debug: Show the actual gcode files found
+				if file_paths:
+					gcode_files = [os.path.basename(f) for f in file_paths]
+					self._safe_log("info", f"Gcode files found: {gcode_files}")
 			except Exception as e:
-				self._usb_logger.info("Could not list files in watchFolder; exception: "+str(e))
+				self._safe_log("info", "Could not list files in watchFolder; exception: "+str(e))
 				resultMessage += f" --- Could not list files in watchFolder; exception: {e}"
 				continue
 
@@ -496,22 +696,32 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 					file_name = os.path.basename(full_src_name)
 					file_root, file_extension = os.path.splitext(file_name)
 
+					# More comprehensive filtering of unwanted files
 					if str(file_root).startswith("COPIED"):
-						self._usb_logger.debug("File already copied according to name: "+str(file_name))
+						self._safe_log("debug", "File already copied according to name: "+str(file_name))
 						continue
 					if str(file_root).startswith("._"):
-						self._usb_logger.debug("File seems to be a Mac system file; skipping.  Filename : "+str(file_name))
+						self._safe_log("debug", "File seems to be a Mac system file; skipping.  Filename : "+str(file_name))
 						continue
-					if file_extension.lower() in self._settings.get(["copyFileTypes"]):
+					if file_name.upper() in ['THUMBS.DB', 'DESKTOP.INI', '.DS_STORE', 'AUTORUN.INF']:
+						self._safe_log("debug", f"Skipping system file: {file_name}")
+						continue
+					if file_extension.lower() in ['.tmp', '.log', '.bak', '.old']:
+						self._safe_log("debug", f"Skipping temporary/backup file: {file_name}")
+						continue
+						
+					# Only process files with valid 3D printing extensions
+					valid_extensions = self._settings.get(["extensions"]) or [".gcode", ".gco", ".g"]
+					if file_extension.lower() in valid_extensions:
 						full_dest_name = os.path.join(dest, file_name)
 
 						if not os.path.isfile(full_dest_name):
 							shutil.copy2(full_src_name, dest)
-							self._usb_logger.info("Copied "+file_name+" to uploads/USB folder.")
+							self._safe_log("info", "Copied "+file_name+" to uploads/USB folder.")
 							resultMessage += f" --- Copied {file_name} to uploads/USB folder."
 							newFiles = True
 
-							if self._settings.get(["fileAction"]) == "rename":
+							if (self._settings.get(["fileAction"]) or "rename") == "rename":
 								copiedName = os.path.join(os.path.dirname(full_src_name), "COPIED" + file_name)
 								os.rename(full_src_name, copiedName)
 								resultMessage += f" --- Renamed original file in watchFolder to: {copiedName}"
@@ -521,24 +731,31 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 								timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M')
 								newDestName = os.path.join(dest, f"{file_root}-{timestamp}{file_extension}")
 								shutil.copy2(full_src_name, newDestName)
-								self._usb_logger.info(f"Copied a new version of {file_name} to uploads/USB folder as {newDestName}")
+								self._safe_log("info", f"Copied a new version of {file_name} to uploads/USB folder as {newDestName}")
 								resultMessage += f" --- Copied a new version of {file_name} to uploads/USB folder as {newDestName}"
 								newFiles = True
 
-								if self._settings.get(["fileAction"]) == "rename":
+								if (self._settings.get(["fileAction"]) or "rename") == "rename":
 									copiedName = os.path.join(os.path.dirname(full_src_name), "COPIED" + file_name)
 									os.rename(full_src_name, copiedName)
 									resultMessage += f" --- Renamed original file in watchFolder to: {copiedName}"
+					else:
+						self._safe_log("debug", f"Skipping non-gcode file: {file_name} (extension: {file_extension})")
 			except Exception as e:
-				self._usb_logger.info("Could not copy files to uploads/USB folder; exception: "+str(e))
+				self._safe_log("info", "Could not copy files to uploads/USB folder; exception: "+str(e))
 				resultMessage += f" --- Could not copy files to uploads/USB folder; exception: {e}"
 				continue
 
 		if resultMessage == "":
 			resultMessage = "Nothing to do."
+		
 		if newFiles:
-			self._event_bus.fire(Events.UPDATED_FILES, dict(type="printables"))
-		return flask.jsonify(result="Finished without error.  Results: "+resultMessage)
+			try:
+				self._event_bus.fire(Events.UPDATED_FILES, dict(type="printables"))
+			except Exception as e:
+				self._safe_log("debug", f"Could not fire UPDATED_FILES event: {e}")
+		
+		return resultMessage
 
 	def _get_file_hash(self, filepath):
 		"""Get MD5 hash of a file"""
@@ -548,7 +765,7 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 				for chunk in iter(lambda: f.read(4096), b""):
 					hash_md5.update(chunk)
 		except Exception as e:
-			self._usb_logger.error(f"Error calculating hash for {filepath}: {e}")
+			self._safe_log("error", f"Error calculating hash for {filepath}: {e}")
 			return ""
 		return hash_md5.hexdigest()
 
@@ -558,9 +775,9 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		# Define your plugin's asset files to automatically include in the
 		# core UI here.
 		return dict(
-			js=["js/usbfileman.js"],
-			css=["css/usbfileman.css"],
-			less=["less/usbfileman.less"]
+			js=["js/usbfilewatcher.js"],
+			css=["css/usbfilewatcher.css"],
+			less=["less/usbfilewatcher.less"]
 		)
 
 	##~~ Softwareupdate hook
@@ -576,12 +793,12 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 
 				# version check: github repository
 				type="github_release",
-				user="MakerGear",
+				user="Garr-Garr",
 				repo="OctoPrint-usbFileWatcher",
 				current=self._plugin_version,
 
 				# update method: pip
-				pip="https://github.com/MakerGear/OctoPrint-usbFileWatcher/archive/{target_version}.zip"
+				pip="https://github.com/Garr-Garr/OctoPrint-usbFileWatcher/archive/{target_version}.zip"
 			)
 		)
 
@@ -589,11 +806,12 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		return dict(
 			scanUsb=[],
 			toggleMonitoring=[],
-			getUsbDevices=[]
+			getUsbDevices=[],
+			diagnostics=[]
 		)
 
 	def on_api_command(self, command, data):
-		self._usb_logger.info(f"USBFileWatcher on_api_command triggered. Command: {command}. Data: {data}")
+		self._safe_log("info", f"USBFileWatcher on_api_command triggered. Command: {command}. Data: {data}")
 
 		if command == 'scanUsb':
 			return self._copy_files_from_usb()
@@ -607,6 +825,9 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		elif command == 'getUsbDevices':
 			devices = self._get_usb_mount_points()
 			return flask.jsonify(result="USB devices retrieved", devices=devices)
+		elif command == 'diagnostics':
+			diagnostics = self._run_diagnostics()
+			return flask.jsonify(result="Diagnostics completed", diagnostics=diagnostics)
 
 	def get_template_configs(self):
 		return [

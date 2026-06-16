@@ -1,70 +1,70 @@
 # OctoPrint-usbFileWatcher
 
-USB File Watcher is an enterprise-grade OctoPrint plugin that provides automatic USB device detection, mounting, and file management for 3D printer workflows. Originally designed for easy USB flashdrive interaction, it now includes comprehensive auto-mounting capabilities for production environments.
+USB File Watcher is an OctoPrint plugin that automatically detects USB drives, mounts them, finds print files, and copies them where OctoPrint can use them. It started as a simple flash drive helper and grew into a solid auto-mount setup that works well on production machines.
 
 ## Features
 
-- **🔄 Automatic USB Detection**: Real-time monitoring and detection of USB devices
-- **🗂️ Smart File Management**: Automatic copying of G-code files with duplicate handling
-- **⚙️ Enterprise Auto-mounting**: Integrated pmount + systemd architecture for reliable USB mounting
-- **📊 Dedicated Logging**: Separate USB activity logging to `~/.octoprint/logs/usbfilewatcher-usb.log`
-- **🔧 Multiple Mount Points**: Supports up to 4 concurrent USB devices (`/media/usb1-4`)
-- **🔒 Safe Unmounting**: Automatic unmounting after file operations with configurable delays
-- **🐧 Linux Optimized**: Designed for Raspberry Pi and Linux-based 3D printer systems
-- **📱 Web Interface**: Easy monitoring and control through OctoPrint's web interface
+- **Automatic USB detection**: Watches for USB device insert/remove events in real time.
+- **Smart file handling**: Copies G-code files and handles duplicates safely.
+- **Auto-mount support**: Uses a `pmount` + `systemd` setup for reliable mounting.
+- **Dedicated logs**: USB activity is logged separately in `~/.octoprint/logs/usbfilewatcher-usb.log`.
+- **Multiple mount points**: Supports up to four USB devices at once (`/media/usb1-4`).
+- **Safe unmounting**: Can unmount automatically after file operations with a configurable delay.
+- **Linux-focused**: Built for Raspberry Pi and other Linux-based OctoPrint systems.
+- **Web UI integration**: Configure and monitor behavior from the OctoPrint interface.
 
 ## Installation
 
 ### Plugin Installation
 
-Install via the bundled [Plugin Manager](https://github.com/foosel/OctoPrint/wiki/Plugin:-Plugin-Manager)
-or manually using this URL:
+Install from the built-in [Plugin Manager](https://github.com/foosel/OctoPrint/wiki/Plugin:-Plugin-Manager),
+or install manually from this URL:
 
-    https://github.com/MakerGear/OctoPrint-usbFileWatcher/archive/refs/heads/installer.zip
+    https://github.com/Garr-Garr/OctoPrint-usbFileWatcher/archive/refs/heads/installer.zip
 
 ### Enterprise Deployment (Recommended)
 
-For production 3D printer fleets, use the enterprise deployment package:
+If you're deploying this across production printers, use the deployment package:
 
 ```bash
 # Download the repository
 git clone https://github.com/Garr-Garr/OctoPrint-usbFileWatcher.git
 cd OctoPrint-usbFileWatcher/deployment
 
-# Run enterprise installation (requires root)
+# Run installation (requires root)
 sudo ./install.sh
 ```
 
 This installs:
-- System-level USB auto-mounting with pmount
-- systemd services for device management
-- udev rules for automatic detection
-- Enterprise plugin configuration
+- System-level USB auto-mounting with `pmount`
+- `systemd` services for USB handling
+- `udev` rules for automatic device detection
+- Plugin settings tuned for this setup
 
 ## How It Works
 
 ### Basic Operation
-1. **USB Device Inserted** → Automatic detection via udev rules
-2. **Device Mounting** → pmount safely mounts to `/media/usb1-4`
-3. **File Discovery** → Plugin scans for G-code files (`.gcode`, `.gco`, `.g`)
-4. **Smart Copying** → Files copied to OctoPrint uploads with duplicate detection
-5. **File Management** → Original files renamed with "COPIED" prefix
-6. **Auto Unmount** → Device safely unmounted after configurable delay
-7. **UI Refresh** → OctoPrint file list automatically updated
+1. **USB inserted**: `udev` catches the event.
+2. **Drive mounted**: `pmount` mounts it to `/media/usb1-4`.
+3. **Files scanned**: The plugin looks for `.gcode`, `.gco`, and `.g` files.
+4. **Files copied**: Files are copied to OctoPrint uploads with duplicate checks.
+5. **Original marked**: Source files are renamed with a `COPIED` prefix.
+6. **Drive unmounted**: It unmounts after a configurable delay.
+7. **UI updated**: OctoPrint refreshes the file list.
 
 ### File Handling
-- **New files**: Copied directly to OctoPrint uploads folder
-- **Duplicates with same content**: Skipped (no unnecessary copying)
-- **Duplicates with different content**: Copied with timestamp suffix
-- **Hash verification**: MD5 checking ensures file integrity
-- **Original preservation**: Source files prefixed with "COPIED" after processing
+- **New files**: Copied directly to the OctoPrint uploads folder.
+- **Duplicate name, same content**: Skipped.
+- **Duplicate name, different content**: Copied with a timestamp suffix.
+- **Integrity check**: MD5 hashes are used to confirm file content.
+- **Source tracking**: Original files are prefixed with `COPIED` after processing.
 
 ### Enterprise Architecture
-- **pmount/pumount**: Safe mounting without root privileges in operation
-- **systemd services**: Hardware-level USB device lifecycle management
-- **udev integration**: Kernel-level device detection and triggering
-- **Multiple mount points**: Concurrent USB device support
-- **Dedicated logging**: Separate log streams for troubleshooting
+- **`pmount`/`pumount`**: Safer mount handling during normal operation.
+- **`systemd` services**: Manages USB device lifecycle events.
+- **`udev` integration**: Triggers mount/unmount flow at the kernel event level.
+- **Multiple mount points**: Supports concurrent USB devices.
+- **Dedicated logging**: Keeps USB activity in its own log stream.
 
 ## Configuration
 
@@ -72,20 +72,20 @@ This installs:
 Access via **OctoPrint Settings → Plugins → USB File Watcher**
 
 **Basic Settings:**
-- **Watch Folders**: Directories to monitor for files (default: `/media/usb1-4`)
+- **Watch Folders**: Folders to scan (default: `/media/usb1-4`)
 - **Copy Destination**: Where files are copied (default: `~/.octoprint/uploads/USB`)
-- **File Extensions**: Types of files to copy (default: `.gcode`, `.gco`, `.g`)
-- **Auto Monitor**: Enable automatic USB device monitoring
+- **File Extensions**: Allowed extensions (default: `.gcode`, `.gco`, `.g`)
+- **Auto Monitor**: Turns on automatic USB monitoring
 
 **Enterprise Settings:**
-- **Enterprise Mode**: Enable auto-mounting and advanced features
-- **Auto Unmount**: Automatically unmount devices after copying
-- **Unmount Delay**: Seconds to wait before unmounting (default: 30)
-- **Debug Logging**: Enable detailed logging for troubleshooting
+- **Enterprise Mode**: Enables auto-mounting and advanced behavior
+- **Auto Unmount**: Unmounts devices after copy operations
+- **Unmount Delay**: Delay in seconds before unmount (default: 30)
+- **Debug Logging**: Adds extra logging for troubleshooting
 
 ### Manual USB Setup (Alternative)
 
-If not using enterprise deployment, configure manual USB mounting:
+If you are not using the deployment package, you can still set this up manually:
 
 #### Prerequisites
 ```bash
@@ -109,14 +109,14 @@ ACTION=="remove", KERNEL=="sd[a-z][0-9]", TAG+="systemd", ENV{SYSTEMD_WANTS}="us
 
 - **OctoPrint**: 1.4.0+ (Python 3.7+ compatible)
 - **Operating System**: Linux (tested on Raspberry Pi OS)
-- **Python**: 3.7 - 3.13.7 (fully compatible)
+- **Python**: 3.7 to 3.13.7
 - **System Packages**: `pmount`, `ntfs-3g` (for NTFS support)
-- **Permissions**: Sudo access for enterprise installation
+- **Permissions**: `sudo` access for deployment install
 
 ### Supported Filesystems
 - **FAT32/FAT16**: Native support
-- **exFAT**: Via `exfat-fuse` package
-- **NTFS**: Via `ntfs-3g` package
+- **exFAT**: Via `exfat-fuse`
+- **NTFS**: Via `ntfs-3g`
 - **ext2/ext3/ext4**: Native Linux support
 
 ## Troubleshooting
@@ -150,11 +150,11 @@ sudo pmount --list
 - Check disk health: `sudo fsck /dev/sdX1`
 
 ### Enterprise Support
-For production deployments, see `deployment/README.md` for comprehensive setup instructions and troubleshooting.
+For production deployments, check `deployment/README.md` for full setup and troubleshooting steps.
 
 ## Development
 
-This plugin is maintained by [MakerGear](https://github.com/MakerGear) for use in production 3D printer environments.
+This plugin is maintained by Garrett @[MakerGear](https://github.com/MakerGear) and used in production 3D printer environments.
 
 **Contributing:**
 - Report issues via GitHub Issues
