@@ -115,36 +115,9 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 	def _setup_usb_folder(self):
 		"""Setup USB folder only if it doesn't exist or path has changed"""
 		try:
-			copy_folder = self._settings.get(["copyFolder"])
-
-			# Expand user path if it starts with ~
-			if copy_folder.startswith('~'):
-				copy_folder = os.path.expanduser(copy_folder)
-
-			# Determine the correct USB folder path
-			target_usb_folder = None
-
-			try:
-				# Try to use file manager to get uploads path
-				uploads_path = self._file_manager.path_on_disk("local", "")
-				target_usb_folder = os.path.join(uploads_path, "USB")
-			except AttributeError:
-				# Fallback if file manager is not available
-				target_usb_folder = copy_folder
-
-			# Only create/update if the folder doesn't exist or path has changed
-			if not os.path.exists(target_usb_folder) or copy_folder != target_usb_folder:
-				os.makedirs(target_usb_folder, exist_ok=True)
-
-				# Update setting only if it changed
-				if copy_folder != target_usb_folder:
-					self._settings.set(["copyFolder"], target_usb_folder)
-					self._settings.save()
-					self._usb_logger.info(f"Updated USB folder path to: {target_usb_folder}")
-				else:
-					self._usb_logger.info(f"Created USB folder: {target_usb_folder}")
-			else:
-				self._usb_logger.debug(f"USB folder already exists: {target_usb_folder}")
+			target_usb_folder = self._ensure_usb_upload_folder()
+			if target_usb_folder:
+				self._usb_logger.info(f"USB upload folder ready: {target_usb_folder}")
 
 		except Exception as e:
 			self._usb_logger.error(f"Exception while setting up USB folder: {e}")
@@ -157,6 +130,29 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 				self._usb_logger.info(f"Created fallback USB folder: {fallback_path}")
 			except Exception as fallback_error:
 				self._usb_logger.error(f"Failed to create any USB folder: {fallback_error}")
+
+	def _ensure_usb_upload_folder(self):
+		"""Resolve/create the OctoPrint uploads USB folder and keep settings aligned."""
+		copy_folder = self._settings.get(["copyFolder"]) or "~/.octoprint/uploads/USB"
+		if copy_folder.startswith('~'):
+			copy_folder = os.path.expanduser(copy_folder)
+
+		# Prefer OctoPrint's local uploads path when available.
+		target_usb_folder = copy_folder
+		try:
+			uploads_path = self._file_manager.path_on_disk("local", "")
+			target_usb_folder = os.path.join(uploads_path, "USB")
+		except Exception:
+			pass
+
+		os.makedirs(target_usb_folder, exist_ok=True)
+
+		if copy_folder != target_usb_folder:
+			self._settings.set(["copyFolder"], target_usb_folder)
+			self._settings.save()
+			self._safe_log("info", f"Updated USB folder path to: {target_usb_folder}")
+
+		return target_usb_folder
 
 	def start_usb_monitoring(self):
 		"""Start monitoring for USB devices"""
@@ -600,6 +596,12 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 		newFiles = False
 		dest = self._settings.get(["copyFolder"])
 
+		# Always resolve to OctoPrint's uploads/USB folder when possible.
+		try:
+			dest = self._ensure_usb_upload_folder()
+		except Exception as e:
+			self._safe_log("warning", f"Could not resolve USB upload folder via file manager: {e}")
+
 		# Expand user path if it starts with ~
 		if dest and dest.startswith('~'):
 			dest = os.path.expanduser(dest)
@@ -716,7 +718,7 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 						full_dest_name = os.path.join(dest, file_name)
 
 						if not os.path.isfile(full_dest_name):
-							shutil.copy2(full_src_name, dest)
+							shutil.copy2(full_src_name, full_dest_name)
 							self._safe_log("info", "Copied "+file_name+" to uploads/USB folder.")
 							resultMessage += f" --- Copied {file_name} to uploads/USB folder."
 							newFiles = True
