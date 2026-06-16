@@ -848,7 +848,7 @@ class UsbfilewatcherPlugin(octoprint.plugin.SettingsPlugin,
 
 # Plugin metadata
 __plugin_name__ = "USB File Watcher Plugin"
-__plugin_pythoncompat__ = ">=3.9,<4"
+__plugin_pythoncompat__ = ">=3.7,<4"
 
 def __plugin_load__():
 	global __plugin_implementation__
