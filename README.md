@@ -20,26 +20,32 @@ USB File Watcher is an OctoPrint plugin that automatically detects USB drives, m
 Install from the built-in [Plugin Manager](https://github.com/foosel/OctoPrint/wiki/Plugin:-Plugin-Manager),
 or install manually from this URL:
 
-    https://github.com/Garr-Garr/OctoPrint-usbFileWatcher/archive/refs/heads/installer.zip
+    https://github.com/Garr-Garr/OctoPrint-usbFileWatcher/archive/refs/heads/main.zip
 
 ### Enterprise Deployment (Recommended)
 
-If you're deploying this across production printers, use the deployment package:
+If you're deploying this on a production printer, install the OctoPrint plugin first. After that, download this repository separately and run the deployment script on the machine that is already running OctoPrint.
 
 ```bash
-# Download the repository
-git clone https://github.com/Garr-Garr/OctoPrint-usbFileWatcher.git
-cd OctoPrint-usbFileWatcher/deployment
+# Download the repository after the plugin is already installed
+wget https://github.com/Garr-Garr/OctoPrint-usbFileWatcher/archive/refs/heads/main.zip
+unzip main.zip
+cd OctoPrint-usbFileWatcher-main/deployment
 
-# Run installation (requires root)
-sudo ./install.sh
+# Run installation on the live system (requires root)
+sudo ./install.sh --runtime
 ```
 
 This installs:
 - System-level USB auto-mounting with `pmount`
 - `systemd` services for USB handling
 - `udev` rules for automatic device detection
-- Plugin settings tuned for this setup
+- The system pieces that work alongside the already-installed plugin
+
+What this does not do:
+- It does not install the OctoPrint plugin for you.
+- It does not replace Plugin Manager.
+- It assumes USB File Watcher is already installed in OctoPrint before you run the script.
 
 ## How It Works
 
